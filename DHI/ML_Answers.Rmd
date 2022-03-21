@@ -59,6 +59,8 @@ bc_data <- bc_data %>% mutate(label = as.factor(if_else(label == 2, "benign", "m
 
 bc_data$label <- factor(bc_data$label, levels = c("malignant", "benign"))
 
+head(bc_data)
+
 
 ```
 
@@ -73,6 +75,9 @@ bc_data.training <- bc_data[part_index,]
 
 # Use the remaining 25% for validation / testing
 bc_data.test <- bc_data[-part_index,]
+
+summary(bc_data.training)
+summary(bc_data.test)
 
 ```
 

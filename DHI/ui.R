@@ -30,7 +30,7 @@ fluidPage(
                          value = 0)
       ),
       column(4, 
-             sliderInput("mar_adheision",
+             sliderInput("mar_adhesion",
                          label = "Marginal Adhesion",
                          min = 0,
                          max = 10,

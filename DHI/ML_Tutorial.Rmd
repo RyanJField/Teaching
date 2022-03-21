@@ -127,7 +127,7 @@ all_data$label <- factor(all_data$label, levels = c("PRESENT", "NOT_PRESENT"))
 summary(all_data)
 
 # Investigate the missing values
-md.pattern(all_data, rotate.names = T)
+md.pattern(all_data)
 
 # Show the first 10 rows of the data
 head(all_data)
@@ -149,6 +149,8 @@ all_data_matrix <- as.data.frame(model.matrix( ~ sex + cp + fbs + restecg + exan
 # Join them with the original data in a new dataframe (table)
 all_data_matrix <- cbind(select(all_data, age, trestbps, chol, oldpeak, ca), all_data_matrix, select(all_data, label))
 
+head(all_data_matrix)
+
 ```
 
 # Partition the data
@@ -162,6 +164,9 @@ all_data_matrix.training <- all_data_matrix[part_index,]
 
 # Use the remaining 25% for validation / testing
 all_data_matrix.test <- all_data_matrix[-part_index,]
+
+summary(all_data_matrix.training)
+summary(all_data_matrix.test)
 
 ```
 
