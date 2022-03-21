@@ -1,0 +1,163 @@
+---
+title: "DHI: MI Tutorial"
+author: "RyanJField"
+date: "09/03/2022"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+
+packages <- c("tidyverse",
+              "rio",
+              "caret",
+              "kableExtra",
+              "mice",
+              "naivebayes",
+              "MLmetrics",
+              "randomForest")
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+#Load the required Libraries
+
+# Tidyverse for data manipulation
+library(tidyverse)
+# Rio for importing data
+library(rio)
+# Caret for Machine Learning
+library(caret)
+# Kable for R Markdown tables
+library(kableExtra)
+# Mice for overview on missing data
+library(mice)
+
+```
+
+# Import Data
+```{r, import_data}
+
+bc_wisconsin <- import("Data/breast-cancer-wisconsin.data", "csv")
+
+bc_data <- bc_wisconsin %>% select(clump_thickness = V2,
+                  uni_cell_size = V3,
+                  uni_cell_shape = V4,
+                  mar_adhesion = V5,
+                  single_epi_cell_size = V6,
+                  bare_nuclei = V7,
+                  bland_chromatin = V8,
+                  normal_nucleoli = V9,
+                  mitoses = V10,
+                  label = V11)
+
+bc_data <- bc_data %>% mutate_all(as.numeric)
+
+bc_data <- bc_data %>% mutate(label = as.factor(if_else(label == 2, "benign", "malignant")))
+
+bc_data$label <- factor(bc_data$label, levels = c("malignant", "benign"))
+
+
+```
+
+# Partition the data
+Next we split the dataset into training and validation sets, with a 75/25 split
+```{r, data_partition}
+# create partition index (a list of 75% of row numbers)
+part_index <- createDataPartition(bc_data$label, p=0.75, list = F)
+
+# Use 75% of rows for training
+bc_data.training <- bc_data[part_index,]
+
+# Use the remaining 25% for validation / testing
+bc_data.test <- bc_data[-part_index,]
+
+```
+
+# Train a Naive Bayes Model
+Now we can train some models starting with Naive Bayes
+```{r, naive_bayes}
+
+# Train a Naive bayes model using the training data (75%) Imputing Missing Values using bagImpute
+naive_bayes_model <- train(x = bc_data.training[,1:9], y = bc_data.training[,10], method = 'naive_bayes', preProc = "bagImpute")
+
+# Use the remaining data to validate the model
+validation_naive_bayes <- predict(object = naive_bayes_model, bc_data.test[,1:9])
+
+# Show a summary of the validation labels
+table(validation_naive_bayes)
+
+# Show the confusion matrix
+confusionMatrix(validation_naive_bayes, bc_data.test[,10], mode = "everything")
+
+```
+
+# Train a KNN model
+Next a KNN Model
+```{r, knn}
+
+# Train a KNN model using the training data (75%) Imputing Missing Values using bagImpute
+knn_model <- train(x = bc_data.training[,1:9], y = bc_data.training[,10], method = 'knn', preProc = c("center", "scale", "bagImpute"))
+
+# Use the remaining data to validate the model
+validation_knn <- predict(object = knn_model, bc_data.test[,1:9])
+
+# Show a summary of the validation labels
+table(validation_knn)
+
+# Show the confusion matrix
+confusionMatrix(validation_knn, bc_data.test[,10], mode = "everything")
+
+```
+
+# Random Forest Model
+And finally a random forest model
+```{r, rf}
+
+rf_model <- train(x = bc_data.training[,1:9], y = bc_data.training[,10], method = 'rf', preProc = "bagImpute")
+
+validation_rf <- predict(object =rf_model, bc_data.test[,1:9])
+
+table(validation_rf)
+
+confusionMatrix(validation_rf, bc_data.test[,10], mode = "everything")
+
+```
+
+```{r, cross_validation}
+
+train_control<- trainControl(method="cv",
+                             number=10,
+                             savePredictions = TRUE,
+                             classProbs = TRUE)
+
+rf_cross_model <- train (x = bc_data[1:9],
+                         y = bc_data[,10],
+                         method = "rf",
+                         preProc = "bagImpute",
+                         trControl = train_control)
+
+# Re-Sampled Confusion Matrix
+confusionMatrix(rf_cross_model, mode = "everything")
+
+# Pooled Confusion Matrix
+confusionMatrix(rf_cross_model$pred$pred, rf_cross_model$pred$obs, mode = "everything")
+
+# Plot a Learning Curve
+
+lc_data <- learning_curve_dat(dat = bc_data,
+                              outcome = "label",
+                              verbose = TRUE,
+                              method = "rf",
+                              metric = "Accuracy", 
+                              preProc = "bagImpute",
+                              trControl=train_control,
+                              test_prop = 0.1)
+
+ggplot(lc_data, aes(x = Training_Size, y = Accuracy, color = Data))  +     
+geom_smooth(method = loess, span = .8)  + scale_x_continuous(expand = c(0, 0)) + 
+    scale_y_continuous(expand = c(0, 0))
+
+```

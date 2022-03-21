@@ -1,0 +1,254 @@
+---
+title: "DHI: MI Tutorial"
+author: "RyanJField"
+date: "09/03/2022"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+
+packages <- c("tidyverse",
+              "rio",
+              "caret",
+              "kableExtra",
+              "mice",
+              "naivebayes",
+              "MLmetrics",
+              "randomForest")
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+#Load the required Libraries
+
+# Tidyverse for data manipulation
+library(tidyverse)
+# Rio for importing data
+library(rio)
+# Caret for Machine Learning
+library(caret)
+# Kable for R Markdown tables
+library(kableExtra)
+# Mice for overview on missing data
+library(mice)
+
+```
+
+# Import Data
+First we import the heart disease dataset from the UCI Machine Learning Repository
+```{r, import_data}
+# Import the data
+cleveland_data <- import("data/processed.cleveland.data", "csv")
+va_data <- import("data/processed.va.data", "csv")
+hungarian_data <- import("data/processed.hungarian.data", "csv")
+switzerland_data <- import("data/processed.switzerland.data", "csv")
+
+# Add the data to a single dataframe (table)
+all_data <- rbind(cleveland_data, va_data, hungarian_data, va_data)
+
+# View the first 10 rows
+head(all_data)
+
+```
+
+# Rename Columns
+Next we rename the columns
+```{r, rename_data}
+
+# Rename the columns
+all_data <- all_data %>% select(
+  age = V1,
+  sex = V2,
+  cp = V3,
+  trestbps = V4,
+  chol = V5,
+  fbs = V6,
+  restecg = V7,
+  thalach = V8,
+  exang = V9,
+  oldpeak = V10,
+  slope = V11,
+  ca = V12,
+  thal = V13,
+  label = V14
+)
+
+# Show a summary of the columns
+summary(all_data)
+
+```
+
+# Prepare / Clean the Data
+Next we transform the data and inspect the missingness
+```{r, clean_data, fig.width = 7, fig.height=7}
+
+# Ensure all the columns are numerical
+# This will replace ? with NA (Missing)
+all_data <- all_data %>% mutate_all(as.numeric)
+
+# Change the Categorical variables into factors
+# This is useful in the next step
+all_data <- all_data %>% mutate(
+  sex = as.factor(if_else(sex == 0, "FEMALE", "MALE")),
+  cp = as.factor(case_when(
+    cp == 1 ~ "TYPICAL_ANGINA",
+    cp == 2 ~ "ATYPICAL_ANGINA",
+    cp == 3 ~ "NON_ANGINAL_PAIN",
+    cp == 4 ~ "ASYMPTOMATIC")),
+  fbs = as.factor(if_else(fbs == 1, "TRUE", "FALSE")),
+  restecg = as.factor(case_when(
+    restecg == 0 ~ "NORMAL",
+    restecg == 1 ~ "ST_T_WAVE_ABNORMALITY",
+    restecg == 2 ~ "LEFT_VENTRICULAR_HYPERTROPHY")),
+  exang = as.factor(if_else(exang == 1, "YES", "NO")),
+  slope = as.factor(case_when(
+    slope == 1 ~ "UPSLOPING",
+    slope == 2 ~ "FLAT",
+    slope == 3 ~ "DOWNSLOPING"
+  )),
+  thal = as.factor(case_when(
+    thal == 3 ~ "NORMAL",
+    thal == 6 ~ "FIXED_DEFECT",
+    thal == 7 ~ "REVERSABLE_DEFECT"
+  )),
+  label = as.factor(case_when(
+    label == 0 ~ "NOT_PRESENT",
+    T ~ "PRESENT" 
+  ))
+)
+
+# Change the reference category for the labels to be "Present", this will be the positive label
+all_data$label <- factor(all_data$label, levels = c("PRESENT", "NOT_PRESENT"))
+
+# Show a summary of the data
+summary(all_data)
+
+# Investigate the missing values
+md.pattern(all_data, rotate.names = T)
+
+# Show the first 10 rows of the data
+head(all_data)
+
+
+```
+
+
+# Dummy Variables
+ML Algorithms often will only accept numerical data, so we convert the categorical variables into dummy variables with a binary indicator
+```{r, factors_to_dummies}
+
+# Allow missing values
+options(na.action='na.pass')
+
+# convert all the factors into dummy variables
+all_data_matrix <- as.data.frame(model.matrix( ~ sex + cp + fbs + restecg + exang + slope + thal - 1, all_data))
+
+# Join them with the original data in a new dataframe (table)
+all_data_matrix <- cbind(select(all_data, age, trestbps, chol, oldpeak, ca), all_data_matrix, select(all_data, label))
+
+```
+
+# Partition the data
+Next we split the dataset into training and validation sets, with a 75/25 split
+```{r, data_partition}
+# create partition index (a list of 75% of row numbers)
+part_index <- createDataPartition(all_data_matrix$label, p=0.75, list = F)
+
+# Use 75% of rows for training
+all_data_matrix.training <- all_data_matrix[part_index,]
+
+# Use the remaining 25% for validation / testing
+all_data_matrix.test <- all_data_matrix[-part_index,]
+
+```
+
+# Train a Naive Bayes Model
+Now we can train some models starting with Naive Bayes
+```{r, naive_bayes}
+
+# Train a Naive bayes model using the training data (75%) Imputing Missing Values using bagImpute
+naive_bayes_model <- train(x = all_data_matrix.training[,1:18], y = all_data_matrix.training[,19], method = 'naive_bayes', preProc = "bagImpute")
+
+# Use the remaining data to validate the model
+validation_naive_bayes <- predict(object = naive_bayes_model, all_data_matrix.test[,1:18])
+
+# Show a summary of the validation labels
+table(validation_naive_bayes)
+
+# Show the confusion matrix
+confusionMatrix(validation_naive_bayes, all_data_matrix.test[,19], mode = "everything")
+
+```
+
+# Train a KNN model
+Next a KNN Model
+```{r, knn}
+
+# Train a KNN model using the training data (75%) Imputing Missing Values using bagImpute
+knn_model <- train(x = all_data_matrix.training[,1:18], y = all_data_matrix.training[,19], method = 'knn', preProc = "bagImpute")
+
+# Use the remaining data to validate the model
+validation_knn <- predict(object = knn_model, all_data_matrix.test[,1:18])
+
+# Show a summary of the validation labels
+table(validation_knn)
+
+# Show the confusion matrix
+confusionMatrix(validation_knn, all_data_matrix.test[,19], mode = "everything")
+
+```
+
+# Random Forest Model
+And finally a random forest model
+```{r, rf}
+
+rf_model <- train(x = all_data_matrix.training[,1:18], y = all_data_matrix.training[,19], method = 'rf', preProc = "bagImpute")
+
+validation_rf <- predict(object =rf_model, all_data_matrix.test[,1:18])
+
+table(validation_rf)
+
+confusionMatrix(validation_rf, all_data_matrix.test[,19], mode = "everything")
+
+```
+
+```{r, cross_validation}
+
+train_control<- trainControl(method="cv",
+                             number=10,
+                             savePredictions = TRUE,
+                             classProbs = TRUE)
+
+rf_cross_model <- train (x = all_data_matrix[1:18],
+                         y = all_data_matrix[,19],
+                         method = "rf",
+                         preProc = "bagImpute",
+                         trControl = train_control)
+
+head(rf_cross_model)
+
+# Re-Sampled Confusion Matrix
+confusionMatrix(rf_cross_model, mode = "everything")
+
+# Pooled Confusion Matrix
+confusionMatrix(rf_cross_model$pred$pred, rf_cross_model$pred$obs, mode = "everything")
+
+# Plot a Learning Curve
+
+lc_data <- learning_curve_dat(dat = all_data_matrix,
+                              outcome = "label",
+                              verbose = TRUE,
+                              method = "rf",
+                              metric = "Accuracy", 
+                              preProc = "bagImpute",
+                              trControl=train_control,
+                              test_prop = 0.1)
+
+ggplot(lc_data, aes(x = Training_Size, y = Accuracy, color = Data))  +     
+geom_smooth(method = loess, span = .8)  + scale_x_continuous(expand = c(0, 0)) + 
+    scale_y_continuous(expand = c(0, 0))
+
+```
